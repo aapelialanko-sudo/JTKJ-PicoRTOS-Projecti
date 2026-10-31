@@ -21,7 +21,7 @@
 
 // Tehtävä 3: Tilakoneen esittely Add missing states.
 // Exercise 3: Definition of the state machine. Add missing states.
-enum state { WAITING=1};
+enum state { WAITING=1, data_ready = 2 };
 enum state programState = WAITING;
 
 // Tehtävä 3: Valoisuuden globaali muuttuja
@@ -29,6 +29,9 @@ enum state programState = WAITING;
 uint32_t ambientLight;
 
 static void btn_fxn(uint gpio, uint32_t eventMask) {
+    uint8_t pinValue = gpio_get(LED1);
+    pinValue = !pinValue;
+    gpio_put(LED1, pinValue);
     // Tehtävä 1: Vaihda LEDin tila käyttämällä TKJHAT SDK:n sopivaa funktiota.
     // Exercise 1: Toggle the LED using the appropriate function from the TKJHAT SDK.
 }
@@ -37,14 +40,14 @@ static void sensor_task(void *arg){
     (void)arg;
     // Tehtävä 2: Alusta valoisuusanturi. Etsi SDK-dokumentaatiosta sopiva funktio.
     // Exercise 2: Init the light sensor. Find in the SDK documentation the adequate function.
-   
+   init_veml6030();
     for(;;){
         
         // Tehtävä 2: Muokkaa tästä eteenpäin sovelluskoodilla. Kommentoi seuraava rivi.
-        //             
+        // printf("%d\n", veml6030_read_light());            
         // Exercise 2: Modify with application code here. Comment following line.
         //             Read sensor data and print it out as string; 
-        tight_loop_contents(); 
+        // tight_loop_contents(); 
 
 
    
@@ -58,6 +61,9 @@ static void sensor_task(void *arg){
         //             If you are in adequate state, instead of printing save the sensor value 
         //             into the global variable.
         //             After that, modify state
+         ambientLight = veml6030_read_light();
+        // printf("state = dataready\n"); debug
+         programState = data_ready;
 
 
 
@@ -66,7 +72,7 @@ static void sensor_task(void *arg){
         
         // Exercise 2. Just for sanity check. Please, comment this out
         // Tehtävä 2: Just for sanity check. Please, comment this out
-        printf("sensorTask\n");
+        // printf("sensorTask\n");
 
         // Do not remove this
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -78,13 +84,16 @@ static void print_task(void *arg){
     
     while(1){
         
+        // tight_loop_contents();
+        printf ("%d\n", ambientLight);
+        programState = WAITING;
+        printf ("state = waiting\n");
         // Tehtävä 3: Kun tila on oikea, tulosta sensoridata merkkijonossa serial-monitor-ikkunaan
         //            Muista tilamuutos
         //            Älä unohda kommentoida seuraavaa koodiriviä.
         // Exercise 3: Print out sensor data as string to serial monitor if the state is correct
         //             Remember to modify state
         //             Do not forget to comment next line of code.
-        tight_loop_contents();
         
 
 
@@ -153,6 +162,14 @@ int main() {
     
     init_hat_sdk();
     sleep_ms(300); //Wait some time so initialization of USB and hat is done.
+    
+    gpio_init(BUTTON1);
+    gpio_set_dir(BUTTON1, GPIO_IN);
+
+    gpio_init(LED1);
+    gpio_set_dir(LED1, GPIO_OUT);
+
+    gpio_set_irq_enabled_with_callback(BUTTON1, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
 
     // Exercise 1: Initialize the button and the led and define an register the corresponding interrupton.
     //             Interruption handler is defined up as btn_fxn
