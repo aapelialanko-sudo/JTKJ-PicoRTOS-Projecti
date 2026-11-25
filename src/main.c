@@ -29,7 +29,7 @@ typedef struct {
 volatile IMUData g_imu_data; // pakottaa lukemaan arvot aina uudestaan, eikä käytä vanhoja arvoja
 volatile bool nappi_painettu = false; // 
 
-enum state { WAITING=1, data_ready = 2};
+enum state { WAITING=1, data_ready = 2, VALI = 3};
 volatile enum state programState = WAITING; // pakottaa lukemaan arvot aina uudestaan
 
 typedef enum {                  //lisätty illalla. Määritellään livedatan arvoista mitä merkkejä asennot antavat
@@ -38,32 +38,51 @@ typedef enum {                  //lisätty illalla. Määritellään livedatan a
     ASENTO_VAAKA,
 } Laiteasento;
 
+int NAPPI2_PAINETTU = 0;
+
+
 #define PYSTY_KYNNYS 0.70f   //hatusta ja netistä heitetyt valmiit arvot. Näisät kattoo että millä livedata tiedolla saadaan oikea merkki printattua
 #define VAAKA_KYNNYS 0.70f  //pitää katsoa vielä screenshoteista tarkennetut arvot
 
 void tulostetaan_asento(void){
+
     if (g_imu_data.az > VAAKA_KYNNYS || g_imu_data.az < -VAAKA_KYNNYS) {
     // Laite on vaakatasossa
-    printf(".\n");          //tässä laitetaan printtiarvot eri asennoilla
+    printf(".");          //tässä laitetaan printtiarvot eri asennoilla
     fflush(stdout); // lähettää printin heti, eikä odota että puskuri täyttyy
 } else if ( g_imu_data.ay > PYSTY_KYNNYS || g_imu_data.ay < -PYSTY_KYNNYS) {
     // Laite on pystysuorassa
-    printf("-\n");
+    printf("-");
     fflush(stdout); 
 } else {
     // Laite on tuntemattomassa asennossa
-    printf(".\n");
-}
+    printf(".");
 }
 
+}
+
+void tulostetaan_vali(void){
+    if (NAPPI2_PAINETTU == 3) {                     //lisätty harjoituksessa, että jos nappia 2 painetaan, niin tulostetaan rivinvaihto. Näin saadaan printtiarvot rivitettyä
+        printf("\n");
+    }
+    else{
+        printf(" ");
+    }
+}
 
 static void btn_fxn(uint gpio, uint32_t eventMask) {
-    uint8_t pinValue = gpio_get(LED1);
-    pinValue = !pinValue;
-    gpio_put(LED1, pinValue);
-
-   nappi_painettu = true;
-}
+    if(gpio == BUTTON1){
+        programState = data_ready; //napin painallus vaihtaa tilaa, jotta imu data tulostetaan
+        NAPPI2_PAINETTU = 0; // nollataan laskuri, jotta tulostus toimii oikein
+    }
+    else if (gpio == BUTTON2){
+        NAPPI2_PAINETTU++; //lasketaan kuinka monta kertaa nappia 2 on painettu
+        if (NAPPI2_PAINETTU > 3) { //jos nappia 2 on painettu yli 3 kertaa, niin nollataan laskuri
+            NAPPI2_PAINETTU = 0;
+        }
+        tulostetaan_vali(); //napin painallus vaihtaa tilaa, jotta imu data tulostetaan
+    }                       
+    }
 
 static void sensor_task(void *arg){
     (void)arg;
@@ -116,22 +135,16 @@ static void imu_task(void *pvParameters) {
     }
     while (1)
     {
-        if (ICM42670_read_sensor_data((float *)&g_imu_data.ax, (float *)&g_imu_data.ay, (float *)&g_imu_data.az,
+        if(programState == data_ready){
+            if (ICM42670_read_sensor_data((float *)&g_imu_data.ax, (float *)&g_imu_data.ay, (float *)&g_imu_data.az,
                                      (float *)&g_imu_data.gx, (float *)&g_imu_data.gy, (float *)&g_imu_data.gz, NULL) == 0) {
-            
-            if (nappi_painettu){
-                nappi_painettu = false;          //tulostukset napin painelun mukaan. Jos nappi on ylhäällä, niin ei tulosteta asentoja
                 tulostetaan_asento();
+                programState = WAITING;
             }
-            
-            if(programState == WAITING){
-                programState = data_ready;
-            }
-             vTaskDelay(pdMS_TO_TICKS(1000));
         }
-    }
+        vTaskDelay(pdMS_TO_TICKS(1000));
 }
-
+}
 
 
 
@@ -150,10 +163,14 @@ int main(){
     gpio_init(BUTTON1);
     gpio_set_dir(BUTTON1, GPIO_IN);
 
+    gpio_init(BUTTON2);
+    gpio_set_dir(BUTTON2, GPIO_IN);
+
     gpio_init(LED1);
     gpio_set_dir(LED1, GPIO_OUT);
 
     gpio_set_irq_enabled_with_callback(BUTTON1, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
+    gpio_set_irq_enabled_with_callback(BUTTON2, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
 
     TaskHandle_t hSensorTask, hPrintTask, hUSB = NULL;
     /*
